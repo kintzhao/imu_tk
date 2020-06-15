@@ -380,7 +380,8 @@ template <typename _T>
   
   return variance;
 }
-
+//MARK: 从静止的区间段数据样本samples中， 依据静态滑动区间样本数量大于interval_n_samps，保存该样本数据（区间均值与否）到extracted_samples
+//only_means false: acc是区间内的所有静态数据   true: gyro是区间段的均值
 template <typename _T>
   void extractIntervalsSamples ( const std::vector< TriadData_<_T> >& samples, 
                                  const std::vector< DataInterval >& intervals, 

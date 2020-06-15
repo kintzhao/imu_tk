@@ -55,7 +55,7 @@ template <typename _T1> struct MultiPosAccResidual
                                      _T2(0), _T2(0), _T2(0),
                                      params[3], params[4], params[5], 
                                      params[6], params[7], params[8] );
-    
+    //MARK:  X' = T*K*(X - B)
     Eigen::Matrix< _T2, 3 , 1> calib_samp = calib_triad.unbiasNormalize( raw_samp );
     residuals[0] = _T2 ( g_mag_ ) - calib_samp.norm();
     return true;
@@ -97,13 +97,14 @@ template <typename _T1> struct MultiPosGyroResidual
 
     std::vector< TriadData_<_T2> > calib_gyro_samples;
     calib_gyro_samples.reserve( interval_pos01_.end_idx - interval_pos01_.start_idx + 1 );
-    
+    //MARK: 指定区间范围内的样本
     for( int i = interval_pos01_.start_idx; i <= interval_pos01_.end_idx; i++ )
       calib_gyro_samples.push_back( TriadData_<_T2>( calib_triad.unbiasNormalize( gyro_samples_[i] ) ) );
     
+    //MARK: 采取四阶龙格库塔法积分计算相应的陀螺积分，rot_mat 旋转矩阵
     Eigen::Matrix< _T2, 3 , 3> rot_mat;
     integrateGyroInterval( calib_gyro_samples, rot_mat, _T2(dt_) );
-    
+    //MARK: 残差计算， 将g_versor_pos0_时刻的加速度数据通过旋转矩阵旋转到g_versor_pos1_，与acc在g_versor_pos1_的测量值作差
     Eigen::Matrix< _T2, 3 , 1> diff = rot_mat.transpose()*g_versor_pos0_.template cast<_T2>() -
                                       g_versor_pos1_.template cast<_T2>();
     
@@ -152,14 +153,15 @@ template <typename _T>
   bool MultiPosCalibration_<_T>::calibrateAcc ( const std::vector< TriadData_<_T> >& acc_samples )
 {
   cout<<"Accelerometers calibration: calibrating..."<<endl;
-  
+  //MARK: 初始化采用数据样本
   min_cost_static_intervals_.clear();
   calib_acc_samples_.clear();
   calib_gyro_samples_.clear();
   
   int n_samps = acc_samples.size();
-  
+  //MARK: 获取开始阶段静止在 init_interval_duration_ 区间范围内数据范围的样本区间index
   DataInterval init_static_interval = DataInterval::initialInterval( acc_samples, init_interval_duration_ );
+  //MARK: 静止样本的方差
   Eigen::Matrix<_T, 3, 1> acc_variance = dataVariance( acc_samples, init_static_interval );
   _T norm_th = acc_variance.norm();
 
@@ -167,6 +169,7 @@ template <typename _T>
   int min_cost_th = -1;
   std::vector< double > min_cost_calib_params;
   
+  //MARK: 依据不同的静态方差阈值判断采集数据样本集分别优化求解，以整体参差最小的作为优化求解的结果
   for (int th_mult = 2; th_mult <= 10; th_mult++)
   {
     std::vector< imu_tk::DataInterval > static_intervals;
@@ -186,7 +189,9 @@ template <typename _T>
     acc_calib_params[8] = init_acc_calib_.biasZ();
     
     std::vector< DataInterval > extracted_intervals;
+    //MARK: 获取静态的数据样本 static_intervals
     staticIntervalsDetector ( acc_samples, th_mult*norm_th, static_intervals );
+    //MARK: 静态区间范围内（稳定区间样本数需要大于interval_n_samples_）提取数据样本 static_samples
     extractIntervalsSamples ( acc_samples, static_intervals, 
                               static_samples, extracted_intervals,
                               interval_n_samples_, acc_use_means_ );
@@ -203,10 +208,12 @@ template <typename _T>
     }
     
     if( verbose_output_) cout<<"Trying calibrate... "<<endl;
-    
+    //MARK: 构造ceres的优化问题，依据采样样本构造ceres参差项
     ceres::Problem problem;
     for( int i = 0; i < static_samples.size(); i++)
     {
+      //MARK: 构造优化参差， g_mag_为设定的重力样子， 相当于观测量； static_samples[i].data() 为测量量
+      //MARK: 参差的形式参照 calibration.h   resudial = g_mag_ - x'.normal(), 其中  X' = T*K*(X - B)
       ceres::CostFunction* cost_function =
         MultiPosAccResidual<_T>::Create ( g_mag_, static_samples[i].data() );
 
@@ -216,7 +223,8 @@ template <typename _T>
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_QR;
     options.minimizer_progress_to_stdout = verbose_output_;
-
+    
+    //MARK: 优化求解得到校准的参数 acc_calib_params
     ceres::Solver::Summary summary;
     ceres::Solve ( options, &problem, &summary );
     if( summary.final_cost < min_cost)
@@ -239,7 +247,7 @@ template <typename _T>
   acc_calib_ = CalibratedTriad_<_T>( min_cost_calib_params[0],
                                      min_cost_calib_params[1],
                                      min_cost_calib_params[2],
-                                     0,0,0,
+                                     0,0,0,  //MARK: 简化表示坐标系交叉对齐的状况
                                      min_cost_calib_params[3],
                                      min_cost_calib_params[4],
                                      min_cost_calib_params[5],
@@ -251,7 +259,7 @@ template <typename _T>
   
   // Calibrate the input accelerometer data with the obtained calibration
   for( int i = 0; i < n_samps; i++)
-    calib_acc_samples_.push_back( acc_calib_.unbiasNormalize( acc_samples[i]) );
+    calib_acc_samples_.push_back( acc_calib_.unbiasNormalize( acc_samples[i]) );//MARK: 校准后的数据
   
   if(verbose_output_) 
   {
@@ -273,10 +281,12 @@ template <typename _T>
     
 }
 
+//MARK: 标定的具体算法
 template <typename _T> 
   bool MultiPosCalibration_<_T>::calibrateAccGyro ( const vector< TriadData_<_T> >& acc_samples, 
                                                    const vector< TriadData_<_T> >& gyro_samples )
 {
+  //MARK: 标定acc
   if( !calibrateAcc( acc_samples ) )
     return false;
   
@@ -284,6 +294,8 @@ template <typename _T>
   
   std::vector< TriadData_<_T> > static_acc_means;
   std::vector< DataInterval > extracted_intervals;
+  //MARK: 从calib_acc_samples_提取区间段内的静态数据 extracted_intervals， static_acc_means为区间段内的均值
+  //只取区间数据集的均值数据， 
   extractIntervalsSamples ( calib_acc_samples_, min_cost_static_intervals_, 
                             static_acc_means, extracted_intervals,
                             interval_n_samples_, true );
@@ -291,6 +303,7 @@ template <typename _T>
   int n_static_pos = static_acc_means.size(), n_samps = gyro_samples.size();
   
   // Compute the gyroscopes biases in the (static) initialization interval
+  //MARK: 计算gyro数据的开始静态的数据样本和均值
   DataInterval init_static_interval = DataInterval::initialInterval( gyro_samples, init_interval_duration_ );
   Eigen::Matrix<_T, 3, 1> gyro_bias = dataMean( gyro_samples, init_static_interval );
   
@@ -302,9 +315,11 @@ template <typename _T>
   // calib_gyro_samples_ already cleared in calibrateAcc()
   calib_gyro_samples_.reserve(n_samps);
   // Remove the bias
+  //MARK: 移除静态偏差
   for( int i = 0; i < n_samps; i++ )
     calib_gyro_samples_.push_back(gyro_calib_.unbias(gyro_samples[i]));
   
+  //MARK: gyro校正的优化参数
   std::vector< double > gyro_calib_params(12);
 
   gyro_calib_params[0] = init_gyro_calib_.misYZ();
@@ -324,9 +339,11 @@ template <typename _T>
   gyro_calib_params[11] = 0.0;
   
   ceres::Problem problem;
-      
+  //MARK: 构造gryo的优化参差     
   for( int i = 0, t_idx = 0; i < n_static_pos - 1; i++ )
   {
+    //MARK: 获取两个静态数据样本集的时间差，以acc对应的角度变化作为观察， gyro在时间段内的积分作为预测
+    //计算得到相应的参差项
     Eigen::Matrix<_T, 3, 1> g_versor_pos0 = static_acc_means[i].data(),
                             g_versor_pos1 = static_acc_means[i + 1].data();
                                
@@ -361,7 +378,7 @@ template <typename _T>
 //         <<" v1 : "<< g_versor_pos1(0)<<" "<< g_versor_pos1(1)<<" "<< g_versor_pos1(2)<<endl;
     
     DataInterval gyro_interval(gyro_idx0, gyro_idx1);
-    
+    //MARK: 残差计算， 将g_versor_pos0_时刻的加速度数据通过旋转矩阵【gyro依据RK4方法积分得到】旋转到g_versor_pos1_，与acc在g_versor_pos1_的测量值作差
     ceres::CostFunction* cost_function =
       MultiPosGyroResidual<_T>::Create ( g_versor_pos0, g_versor_pos1, calib_gyro_samples_,
                                          gyro_interval, gyro_dt_, optimize_gyro_bias_ );
@@ -375,7 +392,7 @@ template <typename _T>
   options.minimizer_progress_to_stdout = verbose_output_;
 
   ceres::Solver::Summary summary;
-
+  //MARK:  优化求解
   ceres::Solve ( options, &problem, &summary );
   gyro_calib_ = CalibratedTriad_<_T>( gyro_calib_params[0],
                                      gyro_calib_params[1],
@@ -391,6 +408,7 @@ template <typename _T>
                                      gyro_bias(2) + gyro_calib_params[11]);                            
 
   // Calibrate the input gyroscopes data with the obtained calibration
+  //MARK: 校准后的数据
   for( int i = 0; i < n_samps; i++)
     calib_gyro_samples_.push_back( gyro_calib_.unbiasNormalize( gyro_samples[i]) );
   

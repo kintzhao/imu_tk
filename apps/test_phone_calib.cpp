@@ -28,7 +28,7 @@ int main(int argc, char** argv)
   mp_calib.setGravityMagnitude(9.803);
   mp_calib.enableVerboseOutput(false);
   mp_calib.enableAccUseMeans(false);
-  //mp_calib.setGyroDataPeriod(0.01);
+  //mp_calib.setGyroDataPeriod(0.01);//MARK: 不设定就是以采样数据的时间戳为准，设定就是以定时间间隔
   mp_calib.calibrateAccGyro(acc_data_calib, gyro_data_calib );
 //   mp_calib.getAccCalib().save("test_phone_acc.calib");
 //   mp_calib.getGyroCalib().save("test_phone_gyro.calib");

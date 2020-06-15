@@ -29,7 +29,7 @@
 #include "imu_tk/filters.h"
 
 using namespace Eigen;
-
+//MARK: 从样本集samples中依据阈值判断找到静止的区间，保存在intervals
 template <typename _T> 
   void imu_tk::staticIntervalsDetector ( const std::vector< imu_tk::TriadData_<_T> >& samples, 
                                          _T threshold, std::vector< imu_tk::DataInterval >& intervals, 
